@@ -66,7 +66,7 @@
     }
     .search-form input:focus { border-color: var(--accent); }
 
-    button {
+    button, select {
       font-family: inherit;
       cursor: pointer;
       border-radius: 6px;
@@ -75,7 +75,9 @@
       color: var(--text);
       padding: 8px 12px;
       font-size: 0.86rem;
+      outline: none;
     }
+    select:focus { border-color: var(--accent); }
 
     .btn-red {
       background: var(--accent);
@@ -94,13 +96,45 @@
       gap: 8px;
       overflow-x: auto;
       padding-bottom: 10px;
-      margin-bottom: 16px;
+      margin-bottom: 12px;
     }
     .nav-tabs button { white-space: nowrap; }
     .nav-tabs button.active {
       background: var(--accent);
       border-color: var(--accent);
       font-weight: 600;
+    }
+
+    /* Thanh bộ lọc Thể loại, Quốc gia, Năm */
+    .filter-bar {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      margin-bottom: 16px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      padding: 10px;
+      border-radius: 8px;
+    }
+    .filter-bar select {
+      width: 100%;
+      background: var(--bg);
+      padding: 8px;
+      font-size: 0.84rem;
+    }
+    .filter-actions {
+      grid-column: 1 / -1;
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
+    }
+    @media (min-width: 720px) {
+      .filter-bar {
+        display: flex;
+        align-items: center;
+      }
+      .filter-bar select { flex: 1; }
+      .filter-actions { grid-column: auto; }
     }
 
     .player-wrap {
@@ -175,6 +209,7 @@
       justify-content: space-between;
       align-items: center;
       margin-bottom: 12px;
+      gap: 8px;
     }
     .section-head h2 { font-size: 1.05rem; }
 
@@ -253,7 +288,7 @@
 <body>
 
   <header>
-    <div class="brand" onclick="switchCategory('moi-cap-nhat')">PHIMNHANH</div>
+    <div class="brand" onclick="resetAndGoHome()">PHIMNHANH</div>
     <form class="search-form" onsubmit="handleSearch(event)">
       <input type="text" id="searchInput" placeholder="Nhập tên phim cần tìm..." />
       <button type="submit" class="btn-red">Tìm</button>
@@ -261,14 +296,34 @@
   </header>
 
   <div class="container">
+    <!-- Thanh danh mục chính -->
     <div class="nav-tabs" id="navTabs">
       <button class="active" data-cat="moi-cap-nhat" onclick="switchCategory('moi-cap-nhat')">Mới cập nhật</button>
+      <button data-cat="phim-rieng" onclick="showCustomMovies()">Phim tự thêm</button>
       <button data-cat="phim-le" onclick="switchCategory('phim-le')">Phim lẻ</button>
       <button data-cat="phim-bo" onclick="switchCategory('phim-bo')">Phim bộ</button>
       <button data-cat="hoat-hinh" onclick="switchCategory('hoat-hinh')">Hoạt hình</button>
       <button data-cat="lich-su" onclick="showHistory()">Lịch sử xem</button>
     </div>
 
+    <!-- Bộ lọc Thể loại, Quốc gia, Năm sản xuất -->
+    <div class="filter-bar">
+      <select id="genreSelect" onchange="applyFilters()">
+        <option value="">Tất cả thể loại</option>
+      </select>
+      <select id="countrySelect" onchange="applyFilters()">
+        <option value="">Tất cả quốc gia</option>
+      </select>
+      <select id="yearSelect" onchange="applyFilters()">
+        <option value="">Tất cả năm</option>
+      </select>
+      <div class="filter-actions">
+        <button type="button" onclick="clearFilters()">Đặt lại</button>
+        <button type="button" class="btn-red" onclick="applyFilters()">Lọc phim</button>
+      </div>
+    </div>
+
+    <!-- Khu vực trình phát -->
     <section id="playerWrap" class="player-wrap">
       <div class="video-box">
         <video id="hlsVideo" controls playsinline></video>
@@ -287,7 +342,7 @@
         <div class="control-row">
           <span class="control-label">Chế độ phát (Đổi nếu bị giật/lỗi)</span>
           <div class="pill-wrap" id="modeGroup">
-            <button id="btnModeHls" onclick="setPlayMode('hls')">Luồng trực tiếp (HLS - Không QC)</button>
+            <button id="btnModeHls" onclick="setPlayMode('hls')">Luồng trực tiếp (HLS/MP4)</button>
             <button id="btnModeEmbed" onclick="setPlayMode('embed')">Trình phát dự phòng (Embed)</button>
           </div>
         </div>
@@ -306,7 +361,7 @@
 
     <div class="section-head">
       <h2 id="listHeading">Phim mới cập nhật</h2>
-      <span id="pageLabel" style="font-size: 0.85rem; color: var(--muted);"></span>
+      <span id="pageLabel" style="font-size: 0.85rem; color: var(--muted); white-space: nowrap;"></span>
     </div>
 
     <div id="statusBox" class="loading">Đang tải dữ liệu phim...</div>
@@ -323,7 +378,8 @@
     const API_BASE = "https://phimapi.com";
     const IMG_CDN = "https://phimimg.com/";
 
-    let currentMode = "category";
+    let customMovies = [];
+    let currentMode = "category"; // 'category' | 'filter' | 'search' | 'custom' | 'history'
     let currentCategory = "moi-cap-nhat";
     let currentKeyword = "";
     let currentPage = 1;
@@ -343,6 +399,99 @@
       return IMG_CDN + url.replace(/^\/+/, "");
     }
 
+    // 1. Nạp danh sách Thể loại, Quốc gia từ API và tạo danh sách Năm
+    async function loadFilterOptions() {
+      const yearSelect = document.getElementById("yearSelect");
+      const currentYear = new Date().getFullYear();
+      for (let y = currentYear; y >= 2000; y--) {
+        const opt = document.createElement("option");
+        opt.value = y;
+        opt.textContent = `Năm ${y}`;
+        yearSelect.appendChild(opt);
+      }
+
+      try {
+        const [genreRes, countryRes] = await Promise.all([
+          fetch(`${API_BASE}/the-loai`),
+          fetch(`${API_BASE}/quoc-gia`)
+        ]);
+
+        if (genreRes.ok) {
+          const genres = await genreRes.json();
+          const genreSelect = document.getElementById("genreSelect");
+          (Array.isArray(genres) ? genres : []).forEach(g => {
+            const opt = document.createElement("option");
+            opt.value = g.slug;
+            opt.textContent = g.name;
+            genreSelect.appendChild(opt);
+          });
+        }
+
+        if (countryRes.ok) {
+          const countries = await countryRes.json();
+          const countrySelect = document.getElementById("countrySelect");
+          (Array.isArray(countries) ? countries : []).forEach(c => {
+            const opt = document.createElement("option");
+            opt.value = c.slug;
+            opt.textContent = c.name;
+            countrySelect.appendChild(opt);
+          });
+        }
+      } catch (e) {
+        console.warn("Không tải được danh sách bộ lọc:", e);
+      }
+    }
+
+    async function loadCustomMovies() {
+      try {
+        const res = await fetch("./phim_rieng.json?t=" + Date.now());
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data)) customMovies = data;
+        }
+      } catch (e) {
+        customMovies = [];
+      }
+    }
+
+    // 2. Xử lý khi chọn bộ lọc Thể loại / Quốc gia / Năm
+    function applyFilters() {
+      const genre = document.getElementById("genreSelect").value;
+      const country = document.getElementById("countrySelect").value;
+      const year = document.getElementById("yearSelect").value;
+
+      if (!genre && !country && !year) {
+        switchCategory(currentCategory === "phim-rieng" || currentCategory === "lich-su" ? "moi-cap-nhat" : currentCategory);
+        return;
+      }
+
+      currentMode = "filter";
+      currentPage = 1;
+
+      const genreText = document.getElementById("genreSelect").selectedOptions[0].text;
+      const countryText = document.getElementById("countrySelect").selectedOptions[0].text;
+      const parts = [];
+      if (genre) parts.push(genreText);
+      if (country) parts.push(countryText);
+      if (year) parts.push(`Năm ${year}`);
+
+      document.getElementById("listHeading").textContent = "Lọc: " + parts.join(" • ");
+      loadList();
+    }
+
+    function clearFilters() {
+      document.getElementById("genreSelect").value = "";
+      document.getElementById("countrySelect").value = "";
+      document.getElementById("yearSelect").value = "";
+      switchCategory("moi-cap-nhat");
+    }
+
+    function resetAndGoHome() {
+      document.getElementById("searchInput").value = "";
+      clearFilters();
+    }
+
+    // 3. Tải danh sách phim theo chế độ hiện tại
     async function loadList() {
       const grid = document.getElementById("movieGrid");
       const status = document.getElementById("statusBox");
@@ -355,8 +504,31 @@
 
       try {
         let url = "";
+        const genre = document.getElementById("genreSelect").value;
+        const country = document.getElementById("countrySelect").value;
+        const year = document.getElementById("yearSelect").value;
+
         if (currentMode === "search") {
           url = `${API_BASE}/v1/api/tim-kiem?keyword=${encodeURIComponent(currentKeyword)}&limit=24&page=${currentPage}`;
+        } else if (currentMode === "filter") {
+          const isListCat = ["phim-le", "phim-bo", "hoat-hinh"].includes(currentCategory);
+          const params = new URLSearchParams({ page: currentPage, limit: 24 });
+
+          if (isListCat) {
+            if (genre) params.set("category", genre);
+            if (country) params.set("country", country);
+            if (year) params.set("year", year);
+            url = `${API_BASE}/v1/api/danh-sach/${currentCategory}?${params.toString()}`;
+          } else if (genre) {
+            if (country) params.set("country", country);
+            if (year) params.set("year", year);
+            url = `${API_BASE}/v1/api/the-loai/${genre}?${params.toString()}`;
+          } else if (country) {
+            if (year) params.set("year", year);
+            url = `${API_BASE}/v1/api/quoc-gia/${country}?${params.toString()}`;
+          } else if (year) {
+            url = `${API_BASE}/v1/api/nam/${year}?${params.toString()}`;
+          }
         } else if (currentCategory === "moi-cap-nhat") {
           url = `${API_BASE}/danh-sach/phim-moi-cap-nhat?page=${currentPage}`;
         } else {
@@ -366,9 +538,23 @@
         const res = await fetch(url);
         const json = await res.json();
 
-        const items = json.items || (json.data && json.data.items) || [];
+        let items = json.items || (json.data && json.data.items) || [];
+
+        if (currentPage === 1 && customMovies.length) {
+          if (currentMode === "category" && currentCategory === "moi-cap-nhat") {
+            items = [...customMovies, ...items];
+          } else if (currentMode === "search") {
+            const kw = currentKeyword.toLowerCase();
+            const matchedCustom = customMovies.filter(m =>
+              (m.name || "").toLowerCase().includes(kw) ||
+              (m.origin_name || "").toLowerCase().includes(kw)
+            );
+            items = [...matchedCustom, ...items];
+          }
+        }
+
         if (!items.length) {
-          status.textContent = "Không tìm thấy phim phù hợp.";
+          status.textContent = "Không tìm thấy phim phù hợp với bộ lọc này.";
           return;
         }
 
@@ -417,6 +603,12 @@
       document.getElementById("pDesc").textContent = "";
       stopPlayers();
 
+      const customFound = customMovies.find(m => m.slug === slug);
+      if (customFound) {
+        applyMovieData({ status: true, movie: customFound, episodes: customFound.episodes || [] });
+        return;
+      }
+
       try {
         const res = await fetch(`${API_BASE}/phim/${slug}`);
         const json = await res.json();
@@ -424,202 +616,26 @@
           document.getElementById("pTitle").textContent = "Không tìm thấy dữ liệu phim này.";
           return;
         }
-
-        activeMovieData = json;
-        activeServerIdx = 0;
-        activeEpIdx = 0;
-
-        const m = json.movie;
-        document.getElementById("pTitle").textContent = m.name;
-        document.getElementById("pMeta").textContent =
-          [m.origin_name, m.year, m.quality, m.lang, m.episode_current].filter(Boolean).join(" • ");
-        document.getElementById("pDesc").textContent = (m.content || "").replace(/<[^>]*>?/gm, "");
-
-        saveToHistory({
-          slug: m.slug,
-          name: m.name,
-          origin_name: m.origin_name,
-          poster_url: m.poster_url,
-          year: m.year,
-          episode_current: m.episode_current
-        });
-
-        renderServersAndEpisodes();
+        applyMovieData(json);
       } catch (err) {
         document.getElementById("pTitle").textContent = "Lỗi tải chi tiết phim.";
       }
     }
 
-    function renderServersAndEpisodes() {
-      const servers = activeMovieData.episodes || [];
-      const srvGroup = document.getElementById("serverGroup");
-      const epGroup = document.getElementById("epGroup");
-      srvGroup.innerHTML = "";
-      epGroup.innerHTML = "";
+    function applyMovieData(json) {
+      activeMovieData = json;
+      activeServerIdx = 0;
+      activeEpIdx = 0;
 
-      if (!servers.length) {
-        epGroup.innerHTML = "<span style='color:#9ca3af;font-size:0.85rem'>Phim đang cập nhật tập...</span>";
-        return;
-      }
+      const m = json.movie;
+      document.getElementById("pTitle").textContent = m.name;
+      document.getElementById("pMeta").textContent =
+        [m.origin_name, m.year, m.quality, m.lang, m.episode_current].filter(Boolean).join(" • ");
+      document.getElementById("pDesc").textContent = (m.content || "").replace(/<[^>]*>?/gm, "");
 
-      servers.forEach((srv, idx) => {
-        const btn = document.createElement("button");
-        btn.className = idx === activeServerIdx ? "active" : "";
-        btn.textContent = srv.server_name || `Server ${idx + 1}`;
-        btn.onclick = () => {
-          activeServerIdx = idx;
-          activeEpIdx = 0;
-          renderServersAndEpisodes();
-        };
-        srvGroup.appendChild(btn);
-      });
-
-      const eps = servers[activeServerIdx].server_data || [];
-      eps.forEach((ep, idx) => {
-        const btn = document.createElement("button");
-        btn.className = idx === activeEpIdx ? "active" : "";
-        btn.textContent = ep.name || `Tập ${idx + 1}`;
-        btn.onclick = () => {
-          activeEpIdx = idx;
-          renderServersAndEpisodes();
-        };
-        epGroup.appendChild(btn);
-      });
-
-      if (eps[activeEpIdx]) {
-        playEpisode(eps[activeEpIdx]);
-      }
-    }
-
-    function stopPlayers() {
-      if (hlsInstance) {
-        hlsInstance.destroy();
-        hlsInstance = null;
-      }
-      videoEl.pause();
-      videoEl.removeAttribute("src");
-      videoEl.load();
-      videoEl.classList.remove("show");
-
-      iframeEl.src = "about:blank";
-      iframeEl.classList.remove("show");
-    }
-
-    function updateModeButtons() {
-      document.getElementById("btnModeHls").className = playMode === "hls" ? "active" : "";
-      document.getElementById("btnModeEmbed").className = playMode === "embed" ? "active" : "";
-    }
-
-    function setPlayMode(mode) {
-      playMode = mode;
-      updateModeButtons();
-      if (activeMovieData) {
-        const ep = activeMovieData.episodes?.[activeServerIdx]?.server_data?.[activeEpIdx];
-        if (ep) playEpisode(ep);
-      }
-    }
-
-    function playEpisode(ep) {
-      stopPlayers();
-      updateModeButtons();
-
-      const useHls = playMode === "hls" && ep.link_m3u8;
-
-      if (useHls) {
-        videoEl.classList.add("show");
-        if (Hls.isSupported()) {
-          hlsInstance = new Hls();
-          hlsInstance.loadSource(ep.link_m3u8);
-          hlsInstance.attachMedia(videoEl);
-          hlsInstance.on(Hls.Events.ERROR, (event, data) => {
-            if (data.fatal && ep.link_embed) {
-              playMode = "embed";
-              playEpisode(ep);
-            }
-          });
-        } else if (videoEl.canPlayType("application/vnd.apple.mpegurl")) {
-          videoEl.src = ep.link_m3u8;
-        }
-      } else if (ep.link_embed) {
-        iframeEl.src = ep.link_embed;
-        iframeEl.classList.add("show");
-      }
-    }
-
-    function closePlayer() {
-      stopPlayers();
-      document.getElementById("playerWrap").classList.remove("open");
-    }
-
-    function switchCategory(cat) {
-      currentMode = "category";
-      currentCategory = cat;
-      currentPage = 1;
-
-      document.querySelectorAll("#navTabs button").forEach(b => {
-        b.classList.toggle("active", b.dataset.cat === cat);
-      });
-
-      const titles = {
-        "moi-cap-nhat": "Phim mới cập nhật",
-        "phim-le": "Phim lẻ tuyển chọn",
-        "phim-bo": "Phim bộ mới nhất",
-        "hoat-hinh": "Phim hoạt hình & Anime"
-      };
-      document.getElementById("listHeading").textContent = titles[cat] || "Danh sách phim";
-      loadList();
-    }
-
-    function handleSearch(e) {
-      e.preventDefault();
-      const kw = document.getElementById("searchInput").value.trim();
-      if (!kw) return;
-      currentMode = "search";
-      currentKeyword = kw;
-      currentPage = 1;
-      document.querySelectorAll("#navTabs button").forEach(b => b.classList.remove("active"));
-      document.getElementById("listHeading").textContent = `Kết quả tìm kiếm: "${kw}"`;
-      loadList();
-    }
-
-    function changePage(step) {
-      if (currentPage + step < 1) return;
-      currentPage += step;
-      loadList();
-      window.scrollTo({ top: 0, behavior: "smooth" });
-    }
-
-    function saveToHistory(movieObj) {
-      let list = JSON.parse(localStorage.getItem("watch_history") || "[]");
-      list = list.filter(item => item.slug !== movieObj.slug);
-      list.unshift(movieObj);
-      if (list.length > 30) list.pop();
-      localStorage.setItem("watch_history", JSON.stringify(list));
-    }
-
-    function showHistory() {
-      currentMode = "history";
-      document.querySelectorAll("#navTabs button").forEach(b => {
-        b.classList.toggle("active", b.dataset.cat === "lich-su");
-      });
-      document.getElementById("listHeading").textContent = "Phim bạn đã xem gần đây";
-      document.getElementById("pagination").style.display = "none";
-      document.getElementById("pageLabel").textContent = "";
-
-      const list = JSON.parse(localStorage.getItem("watch_history") || "[]");
-      const status = document.getElementById("statusBox");
-      if (!list.length) {
-        document.getElementById("movieGrid").innerHTML = "";
-        status.style.display = "block";
-        status.textContent = "Chưa có lịch sử xem phim nào.";
-        return;
-      }
-      status.style.display = "none";
-      renderCards(list);
-    }
-
-    loadList();
-  </script>
-</body>
-  </html>
-  
+      saveToHistory({
+        slug: m.slug,
+        name: m.name,
+        origin_name: m.origin_name,
+        poster_url: m.poster_url,
+        y
