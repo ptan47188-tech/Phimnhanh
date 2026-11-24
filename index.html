@@ -1,0 +1,625 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PhimNhanh - Xem phim trực tuyến Full HD</title>
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+  <style>
+    :root {
+      --bg: #0c0e14;
+      --card: #161a25;
+      --card-2: #1f2536;
+      --accent: #e50914;
+      --text: #f3f4f6;
+      --muted: #9ca3af;
+      --border: #2a3142;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+    }
+
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: rgba(12, 14, 20, 0.95);
+      backdrop-filter: blur(8px);
+      border-bottom: 1px solid var(--border);
+      padding: 12px 16px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .brand {
+      font-size: 1.3rem;
+      font-weight: 800;
+      color: var(--accent);
+      cursor: pointer;
+      letter-spacing: 0.5px;
+    }
+
+    .search-form {
+      display: flex;
+      flex: 1;
+      max-width: 440px;
+      gap: 6px;
+    }
+
+    .search-form input {
+      flex: 1;
+      background: var(--card);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 8px 12px;
+      border-radius: 6px;
+      outline: none;
+      font-size: 0.92rem;
+    }
+    .search-form input:focus { border-color: var(--accent); }
+
+    button {
+      font-family: inherit;
+      cursor: pointer;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: var(--card-2);
+      color: var(--text);
+      padding: 8px 12px;
+      font-size: 0.86rem;
+    }
+
+    .btn-red {
+      background: var(--accent);
+      border-color: var(--accent);
+      font-weight: 600;
+    }
+
+    .container {
+      max-width: 1140px;
+      margin: 0 auto;
+      padding: 16px;
+    }
+
+    .nav-tabs {
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      padding-bottom: 10px;
+      margin-bottom: 16px;
+    }
+    .nav-tabs button { white-space: nowrap; }
+    .nav-tabs button.active {
+      background: var(--accent);
+      border-color: var(--accent);
+      font-weight: 600;
+    }
+
+    .player-wrap {
+      display: none;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+      margin-bottom: 24px;
+    }
+    .player-wrap.open { display: block; }
+
+    .video-box {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      background: #000;
+    }
+
+    .video-box video,
+    .video-box iframe {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      border: none;
+      display: none;
+    }
+    .video-box .show { display: block; }
+
+    .player-details { padding: 16px; }
+    .player-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 10px;
+      margin-bottom: 8px;
+    }
+    .player-title { font-size: 1.25rem; font-weight: 700; }
+    .player-meta { font-size: 0.85rem; color: var(--muted); margin-bottom: 10px; }
+    .player-desc { font-size: 0.9rem; color: #d1d5db; margin-bottom: 14px; }
+
+    .control-row {
+      padding-top: 12px;
+      margin-top: 12px;
+      border-top: 1px solid var(--border);
+    }
+    .control-label {
+      display: block;
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      color: var(--muted);
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+
+    .pill-wrap {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      max-height: 210px;
+      overflow-y: auto;
+    }
+    .pill-wrap button.active {
+      background: var(--accent);
+      border-color: var(--accent);
+      font-weight: 600;
+    }
+
+    .section-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+    .section-head h2 { font-size: 1.05rem; }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(145px, 1fr));
+      gap: 12px;
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+      cursor: pointer;
+      transition: transform 0.15s, border-color 0.15s;
+    }
+    .card:hover { transform: translateY(-3px); border-color: var(--accent); }
+
+    .poster {
+      position: relative;
+      aspect-ratio: 2 / 3;
+      background: #1e2433;
+      overflow: hidden;
+    }
+    .poster img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+    .tag {
+      position: absolute;
+      top: 6px;
+      left: 6px;
+      background: rgba(0, 0, 0, 0.8);
+      color: #fbbf24;
+      font-size: 0.7rem;
+      font-weight: 700;
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+
+    .card-body { padding: 8px 10px; }
+    .card-name {
+      font-size: 0.9rem;
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .card-sub {
+      font-size: 0.76rem;
+      color: var(--muted);
+      margin-top: 2px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .pagination {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 10px;
+      margin: 24px 0;
+    }
+
+    .loading {
+      text-align: center;
+      padding: 36px;
+      color: var(--muted);
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="brand" onclick="switchCategory('moi-cap-nhat')">PHIMNHANH</div>
+    <form class="search-form" onsubmit="handleSearch(event)">
+      <input type="text" id="searchInput" placeholder="Nhập tên phim cần tìm..." />
+      <button type="submit" class="btn-red">Tìm</button>
+    </form>
+  </header>
+
+  <div class="container">
+    <div class="nav-tabs" id="navTabs">
+      <button class="active" data-cat="moi-cap-nhat" onclick="switchCategory('moi-cap-nhat')">Mới cập nhật</button>
+      <button data-cat="phim-le" onclick="switchCategory('phim-le')">Phim lẻ</button>
+      <button data-cat="phim-bo" onclick="switchCategory('phim-bo')">Phim bộ</button>
+      <button data-cat="hoat-hinh" onclick="switchCategory('hoat-hinh')">Hoạt hình</button>
+      <button data-cat="lich-su" onclick="showHistory()">Lịch sử xem</button>
+    </div>
+
+    <section id="playerWrap" class="player-wrap">
+      <div class="video-box">
+        <video id="hlsVideo" controls playsinline></video>
+        <iframe id="embedFrame" allowfullscreen allow="autoplay; encrypted-media"></iframe>
+      </div>
+      <div class="player-details">
+        <div class="player-top">
+          <div>
+            <h1 id="pTitle" class="player-title"></h1>
+            <div id="pMeta" class="player-meta"></div>
+          </div>
+          <button onclick="closePlayer()">Đóng ✕</button>
+        </div>
+        <p id="pDesc" class="player-desc"></p>
+
+        <div class="control-row">
+          <span class="control-label">Chế độ phát (Đổi nếu bị giật/lỗi)</span>
+          <div class="pill-wrap" id="modeGroup">
+            <button id="btnModeHls" onclick="setPlayMode('hls')">Luồng trực tiếp (HLS - Không QC)</button>
+            <button id="btnModeEmbed" onclick="setPlayMode('embed')">Trình phát dự phòng (Embed)</button>
+          </div>
+        </div>
+
+        <div class="control-row">
+          <span class="control-label">Chọn nguồn ngôn ngữ / Server</span>
+          <div class="pill-wrap" id="serverGroup"></div>
+        </div>
+
+        <div class="control-row">
+          <span class="control-label">Danh sách tập</span>
+          <div class="pill-wrap" id="epGroup"></div>
+        </div>
+      </div>
+    </section>
+
+    <div class="section-head">
+      <h2 id="listHeading">Phim mới cập nhật</h2>
+      <span id="pageLabel" style="font-size: 0.85rem; color: var(--muted);"></span>
+    </div>
+
+    <div id="statusBox" class="loading">Đang tải dữ liệu phim...</div>
+    <div id="movieGrid" class="grid"></div>
+
+    <div id="pagination" class="pagination" style="display: none;">
+      <button id="btnPrev" onclick="changePage(-1)">← Trang trước</button>
+      <span id="pageNumber" style="font-size: 0.9rem;">Trang 1</span>
+      <button id="btnNext" onclick="changePage(1)">Trang sau →</button>
+    </div>
+  </div>
+
+  <script>
+    const API_BASE = "https://phimapi.com";
+    const IMG_CDN = "https://phimimg.com/";
+
+    let currentMode = "category";
+    let currentCategory = "moi-cap-nhat";
+    let currentKeyword = "";
+    let currentPage = 1;
+
+    let hlsInstance = null;
+    let activeMovieData = null;
+    let activeServerIdx = 0;
+    let activeEpIdx = 0;
+    let playMode = "hls";
+
+    const videoEl = document.getElementById("hlsVideo");
+    const iframeEl = document.getElementById("embedFrame");
+
+    function resolveImage(url) {
+      if (!url) return "";
+      if (url.startsWith("http://") || url.startsWith("https://")) return url;
+      return IMG_CDN + url.replace(/^\/+/, "");
+    }
+
+    async function loadList() {
+      const grid = document.getElementById("movieGrid");
+      const status = document.getElementById("statusBox");
+      const pag = document.getElementById("pagination");
+
+      grid.innerHTML = "";
+      status.style.display = "block";
+      status.textContent = "Đang tải danh sách phim...";
+      pag.style.display = "none";
+
+      try {
+        let url = "";
+        if (currentMode === "search") {
+          url = `${API_BASE}/v1/api/tim-kiem?keyword=${encodeURIComponent(currentKeyword)}&limit=24&page=${currentPage}`;
+        } else if (currentCategory === "moi-cap-nhat") {
+          url = `${API_BASE}/danh-sach/phim-moi-cap-nhat?page=${currentPage}`;
+        } else {
+          url = `${API_BASE}/v1/api/danh-sach/${currentCategory}?page=${currentPage}&limit=24`;
+        }
+
+        const res = await fetch(url);
+        const json = await res.json();
+
+        const items = json.items || (json.data && json.data.items) || [];
+        if (!items.length) {
+          status.textContent = "Không tìm thấy phim phù hợp.";
+          return;
+        }
+
+        status.style.display = "none";
+        renderCards(items);
+
+        pag.style.display = "flex";
+        document.getElementById("pageNumber").textContent = `Trang ${currentPage}`;
+        document.getElementById("pageLabel").textContent = `Trang ${currentPage}`;
+        document.getElementById("btnPrev").disabled = currentPage <= 1;
+      } catch (err) {
+        status.textContent = "Không thể kết nối tới API nguồn. Vui lòng thử lại sau.";
+      }
+    }
+
+    function renderCards(items) {
+      const grid = document.getElementById("movieGrid");
+      grid.innerHTML = "";
+
+      items.forEach(item => {
+        const card = document.createElement("div");
+        card.className = "card";
+        const badgeText = item.episode_current || item.quality || item.year || "HD";
+        card.innerHTML = `
+          <div class="poster">
+            <img src="${resolveImage(item.poster_url || item.thumb_url)}" loading="lazy" alt="${item.name}" />
+            <span class="tag">${badgeText}</span>
+          </div>
+          <div class="card-body">
+            <div class="card-name" title="${item.name}">${item.name}</div>
+            <div class="card-sub">${item.origin_name || ""} ${item.year ? "• " + item.year : ""}</div>
+          </div>
+        `;
+        card.onclick = () => openMovieDetail(item.slug);
+        grid.appendChild(card);
+      });
+    }
+
+    async function openMovieDetail(slug) {
+      const wrap = document.getElementById("playerWrap");
+      wrap.classList.add("open");
+      window.scrollTo({ top: 0, behavior: "smooth" });
+
+      document.getElementById("pTitle").textContent = "Đang tải dữ liệu phim...";
+      document.getElementById("pMeta").textContent = "";
+      document.getElementById("pDesc").textContent = "";
+      stopPlayers();
+
+      try {
+        const res = await fetch(`${API_BASE}/phim/${slug}`);
+        const json = await res.json();
+        if (!json.status || !json.movie) {
+          document.getElementById("pTitle").textContent = "Không tìm thấy dữ liệu phim này.";
+          return;
+        }
+
+        activeMovieData = json;
+        activeServerIdx = 0;
+        activeEpIdx = 0;
+
+        const m = json.movie;
+        document.getElementById("pTitle").textContent = m.name;
+        document.getElementById("pMeta").textContent =
+          [m.origin_name, m.year, m.quality, m.lang, m.episode_current].filter(Boolean).join(" • ");
+        document.getElementById("pDesc").textContent = (m.content || "").replace(/<[^>]*>?/gm, "");
+
+        saveToHistory({
+          slug: m.slug,
+          name: m.name,
+          origin_name: m.origin_name,
+          poster_url: m.poster_url,
+          year: m.year,
+          episode_current: m.episode_current
+        });
+
+        renderServersAndEpisodes();
+      } catch (err) {
+        document.getElementById("pTitle").textContent = "Lỗi tải chi tiết phim.";
+      }
+    }
+
+    function renderServersAndEpisodes() {
+      const servers = activeMovieData.episodes || [];
+      const srvGroup = document.getElementById("serverGroup");
+      const epGroup = document.getElementById("epGroup");
+      srvGroup.innerHTML = "";
+      epGroup.innerHTML = "";
+
+      if (!servers.length) {
+        epGroup.innerHTML = "<span style='color:#9ca3af;font-size:0.85rem'>Phim đang cập nhật tập...</span>";
+        return;
+      }
+
+      servers.forEach((srv, idx) => {
+        const btn = document.createElement("button");
+        btn.className = idx === activeServerIdx ? "active" : "";
+        btn.textContent = srv.server_name || `Server ${idx + 1}`;
+        btn.onclick = () => {
+          activeServerIdx = idx;
+          activeEpIdx = 0;
+          renderServersAndEpisodes();
+        };
+        srvGroup.appendChild(btn);
+      });
+
+      const eps = servers[activeServerIdx].server_data || [];
+      eps.forEach((ep, idx) => {
+        const btn = document.createElement("button");
+        btn.className = idx === activeEpIdx ? "active" : "";
+        btn.textContent = ep.name || `Tập ${idx + 1}`;
+        btn.onclick = () => {
+          activeEpIdx = idx;
+          renderServersAndEpisodes();
+        };
+        epGroup.appendChild(btn);
+      });
+
+      if (eps[activeEpIdx]) {
+        playEpisode(eps[activeEpIdx]);
+      }
+    }
+
+    function stopPlayers() {
+      if (hlsInstance) {
+        hlsInstance.destroy();
+        hlsInstance = null;
+      }
+      videoEl.pause();
+      videoEl.removeAttribute("src");
+      videoEl.load();
+      videoEl.classList.remove("show");
+
+      iframeEl.src = "about:blank";
+      iframeEl.classList.remove("show");
+    }
+
+    function updateModeButtons() {
+      document.getElementById("btnModeHls").className = playMode === "hls" ? "active" : "";
+      document.getElementById("btnModeEmbed").className = playMode === "embed" ? "active" : "";
+    }
+
+    function setPlayMode(mode) {
+      playMode = mode;
+      updateModeButtons();
+      if (activeMovieData) {
+        const ep = activeMovieData.episodes?.[activeServerIdx]?.server_data?.[activeEpIdx];
+        if (ep) playEpisode(ep);
+      }
+    }
+
+    function playEpisode(ep) {
+      stopPlayers();
+      updateModeButtons();
+
+      const useHls = playMode === "hls" && ep.link_m3u8;
+
+      if (useHls) {
+        videoEl.classList.add("show");
+        if (Hls.isSupported()) {
+          hlsInstance = new Hls();
+          hlsInstance.loadSource(ep.link_m3u8);
+          hlsInstance.attachMedia(videoEl);
+          hlsInstance.on(Hls.Events.ERROR, (event, data) => {
+            if (data.fatal && ep.link_embed) {
+              playMode = "embed";
+              playEpisode(ep);
+            }
+          });
+        } else if (videoEl.canPlayType("application/vnd.apple.mpegurl")) {
+          videoEl.src = ep.link_m3u8;
+        }
+      } else if (ep.link_embed) {
+        iframeEl.src = ep.link_embed;
+        iframeEl.classList.add("show");
+      }
+    }
+
+    function closePlayer() {
+      stopPlayers();
+      document.getElementById("playerWrap").classList.remove("open");
+    }
+
+    function switchCategory(cat) {
+      currentMode = "category";
+      currentCategory = cat;
+      currentPage = 1;
+
+      document.querySelectorAll("#navTabs button").forEach(b => {
+        b.classList.toggle("active", b.dataset.cat === cat);
+      });
+
+      const titles = {
+        "moi-cap-nhat": "Phim mới cập nhật",
+        "phim-le": "Phim lẻ tuyển chọn",
+        "phim-bo": "Phim bộ mới nhất",
+        "hoat-hinh": "Phim hoạt hình & Anime"
+      };
+      document.getElementById("listHeading").textContent = titles[cat] || "Danh sách phim";
+      loadList();
+    }
+
+    function handleSearch(e) {
+      e.preventDefault();
+      const kw = document.getElementById("searchInput").value.trim();
+      if (!kw) return;
+      currentMode = "search";
+      currentKeyword = kw;
+      currentPage = 1;
+      document.querySelectorAll("#navTabs button").forEach(b => b.classList.remove("active"));
+      document.getElementById("listHeading").textContent = `Kết quả tìm kiếm: "${kw}"`;
+      loadList();
+    }
+
+    function changePage(step) {
+      if (currentPage + step < 1) return;
+      currentPage += step;
+      loadList();
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+
+    function saveToHistory(movieObj) {
+      let list = JSON.parse(localStorage.getItem("watch_history") || "[]");
+      list = list.filter(item => item.slug !== movieObj.slug);
+      list.unshift(movieObj);
+      if (list.length > 30) list.pop();
+      localStorage.setItem("watch_history", JSON.stringify(list));
+    }
+
+    function showHistory() {
+      currentMode = "history";
+      document.querySelectorAll("#navTabs button").forEach(b => {
+        b.classList.toggle("active", b.dataset.cat === "lich-su");
+      });
+      document.getElementById("listHeading").textContent = "Phim bạn đã xem gần đây";
+      document.getElementById("pagination").style.display = "none";
+      document.getElementById("pageLabel").textContent = "";
+
+      const list = JSON.parse(localStorage.getItem("watch_history") || "[]");
+      const status = document.getElementById("statusBox");
+      if (!list.length) {
+        document.getElementById("movieGrid").innerHTML = "";
+        status.style.display = "block";
+        status.textContent = "Chưa có lịch sử xem phim nào.";
+        return;
+      }
+      status.style.display = "none";
+      renderCards(list);
+    }
+
+    loadList();
+  </script>
+</body>
+  </html>
+  
